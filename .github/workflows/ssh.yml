@@ -1,0 +1,28 @@
+name: Windows tmate Session
+
+on:
+  workflow_dispatch:  # Trigger manually
+
+jobs:
+  live-ssh:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Install tmate
+      run: |
+        choco install -y tmate
+        tmate -V
+
+    - name: Start tmate session
+      run: |
+        tmate -S /tmp/tmate.sock new-session -d
+        tmate -S /tmp/tmate.sock wait tmate-ready
+        echo "SSH connection info:"
+        tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}'
+        echo "Web connection info:"
+        tmate -S /tmp/tmate.sock display -p '#{tmate_web}'
+        # Keep the session alive
+        tmate -S /tmp/tmate.sock attach
