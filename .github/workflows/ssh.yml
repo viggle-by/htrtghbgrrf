@@ -1,50 +1,63 @@
-name: WSL Ubuntu 24.04 with tmate and X11
+name: Self-Hosted Windows WSL + Cloudflare SSH
 
 on:
   workflow_dispatch:
 
 jobs:
-  wsl-tmate-x11:
-    runs-on: windows-latest
+  wsl-cloudflare-ssh:
+    runs-on: self-hosted
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-
     - name: Enable WSL and install Ubuntu 24.04
       run: |
-        # Enable WSL and Virtual Machine Platform
         dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
         dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
 
-        # Install Ubuntu 24.04
+        wsl --set-default-version 2
         wsl --install -d Ubuntu-24.04
 
-        # Set default WSL version to 2
-        wsl --set-default-version 2
+        Write-Host "Rebooting machine to complete WSL installation..."
+        Restart-Computer -Force
 
-    - name: Update Ubuntu and install tmate + GUI tools
+    - name: Install SSH and Cloudflared inside WSL
       run: |
         wsl -d Ubuntu-24.04 -- bash -c "
           sudo apt-get update
-          sudo apt-get install -y tmate x11-apps dbus-x11 mesa-utils
+          sudo apt-get install -y openssh-server curl
+
+          # Start SSH server
+          sudo service ssh start
+
+          # Install Cloudflared
+          curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o cloudflared.deb
+          sudo dpkg -i cloudflared.deb
         "
 
-    - name: Start tmate session inside WSL
+    - name: Start Cloudflare SSH tunnel
       run: |
         wsl -d Ubuntu-24.04 -- bash -c "
-          # Start a new tmate session in foreground
-          tmate -S /tmp/tmate.sock new-session -d
-          
-          # Print SSH and web connection info
-          tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}'
-          tmate -S /tmp/tmate.sock display -p '#{tmate_web}'
+          echo 'Starting Cloudflare Tunnel for SSH...'
 
-          # Keep session alive
-          tmate -S /tmp/tmate.sock attach
+          # Run Cloudflare Tunnel in foreground and capture hostname/port
+          output=\$(cloudflared tunnel --url ssh://localhost:22 --loglevel info 2>&1)
+
+          # Extract hostname and port
+          if [[ \$output =~ Forwarding\ tcp://([a-z0-9.-]+):([0-9]+) ]]; then
+            host=\${BASH_REMATCH[1]}
+            port=\${BASH_REMATCH[2]}
+            user=\$(whoami)
+            echo '================ SSH CONNECTION INFO ================'
+            echo 'SSH command:'
+            echo \"ssh \$user@\$host -p \$port\"
+            echo '====================================================='
+          else
+            echo 'Failed to parse Cloudflare tunnel hostname/port.'
+          fi
+
+          # Keep tunnel alive
+          cloudflared tunnel --url ssh://localhost:22
         "
 
     - name: Test X11 GUI (optional)
       run: |
-        # Run xclock or any GUI app to test WSLg forwarding
-        wsl -d Ubuntu-24.04 -- bash -c "sudo apt install neofetch"
+        wsl -d Ubuntu-24.04 -- bash -c "sudo apt-get install -y x11-apps mesa-utils; xclock &"
