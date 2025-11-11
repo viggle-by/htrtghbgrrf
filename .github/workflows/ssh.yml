@@ -11,7 +11,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Install OpenSSH Server (if needed)
+    - name: Install OpenSSH Server
       run: |
         Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
         Start-Service sshd
@@ -23,12 +23,10 @@ jobs:
         choco install cloudflared -y
         cloudflared --version
 
-    - name: Start cloudflared tunnel for SSH
+    - name: Start Cloudflare tunnel (blocking)
       env:
         CLOUDFLARED_TOKEN: ${{ secrets.CLOUDFLARED_TOKEN }}
       run: |
-        # Authenticate with Cloudflare
-        cloudflared tunnel login --token $env:CLOUDFLARED_TOKEN
-
-        # Create and run a temporary tunnel exposing port 22 (SSH)
-        Start-Process -NoNewWindow -FilePath "cloudflared.exe" -ArgumentList "tunnel --url ssh://localhost:22"
+        cloudflared tunnel login --token %CLOUDFLARED_TOKEN%
+        echo "Starting SSH tunnel..."
+        cloudflared tunnel --url ssh://localhost:22
